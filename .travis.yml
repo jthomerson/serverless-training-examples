@@ -1,0 +1,21 @@
+language: node_js
+node_js:
+  - "node" # Latest node version
+  - "lts/*" # Latest LTS version
+  - "10"
+  - "8"
+  - "8.10"
+  - "6"
+
+before_install: if [[ `npm -v` != 6* ]]; then npm i -g npm@6.4.1; fi
+
+script:
+   - node --version
+   - npm --version
+   - grunt standards
+   # We don't have any tests defined for this project yet.
+   # - npm test
+
+# For code coverage:
+after_success:
+   cat ./coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js && rm -rf ./coverage

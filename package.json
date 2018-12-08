@@ -1,0 +1,35 @@
+{
+  "name": "serverless-training-examples",
+  "version": "0.0.0",
+  "description": "Examples for use on https://serverless-training.com",
+  "main": "Gruntfile.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jthomerson/serverless-training-examples.git"
+  },
+  "keywords": [
+    "serverless",
+    "examples"
+  ],
+  "author": "Jeremy Thomerson",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/jthomerson/serverless-training-examples/issues"
+  },
+  "homepage": "https://serverless-training.com",
+  "dependencies": {},
+  "devDependencies": {
+    "@silvermine/eslint-config": "2.0.0-preview.2",
+    "coveralls": "3.0.2",
+    "eslint": "5.10.0",
+    "expect.js": "0.3.1",
+    "grunt": "1.0.3",
+    "grunt-eslint": "21.0.0",
+    "istanbul": "0.4.5",
+    "mocha": "5.2.0",
+    "mocha-lcov-reporter": "1.3.0"
+  }
+}
