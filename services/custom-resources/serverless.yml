@@ -1,0 +1,129 @@
+service: cloudformation-custom-resources
+
+# Note: I write these examples using the latest version of Serverless. I pin the example
+# to that version so that I know it will work for you even if you find it a year later.
+# Likely, you can remove this line and use the example with any recent version of
+# Serverless. Give it a shot if you're using a different version.
+frameworkVersion: "=1.34.1"
+
+custom:
+   defaultRegion: us-east-1
+   region: ${opt:region, self:custom.defaultRegion}
+   stage: ${opt:stage, env:USER}
+   objectPrefix: '${self:service}-${self:custom.stage}'
+
+package:
+   exclude:
+      - 'tests/**'
+
+provider:
+   name: aws
+   runtime: nodejs6.10
+   stackTags: # NOTE: STAGE is automatically added by SLS
+      SLS_SVC_NAME: ${self:service}
+   region: ${self:custom.region}
+   stage: ${self:custom.stage}
+   environment:
+      SLS_SVC_NAME: ${self:service}
+      SLS_STAGE: ${self:custom.stage}
+   iamRoleStatements:
+      # Permissions needed for various services:
+      # We know that APIGatewayDomainName requires this, and likely other resources do as
+      # well. See
+      # https://aws.amazon.com/blogs/security/introducing-an-easier-way-to-delegate-permissions-to-aws-services-service-linked-roles/
+      -
+         Effect: 'Allow'
+         Action:
+            - 'iam:CreateServiceLinkedRole'
+         Resource:
+            - '*'
+      # Permissions needed for SNSSQSSubscription:
+      -
+         Effect: 'Allow'
+         Action:
+            - 'sns:Subscribe'
+            - 'sns:Unsubscribe'
+         Resource:
+            - '*'
+      # Permissions needed for CloudFrontOriginAccessIdentity:
+      -
+         Effect: 'Allow'
+         Action:
+            - 'cloudfront:CreateCloudFrontOriginAccessIdentity'
+            - 'cloudfront:DeleteCloudFrontOriginAccessIdentity'
+            - 'cloudfront:GetCloudFrontOriginAccessIdentity'
+            - 'cloudfront:GetCloudFrontOriginAccessIdentityConfig'
+            - 'cloudfront:ListCloudFrontOriginAccessIdentities'
+            - 'cloudfront:UpdateCloudFrontOriginAccessIdentity'
+         Resource:
+            - '*'
+      # Permissions needed for DynamoDBGlobalTable:
+      -
+         Effect: 'Allow'
+         Action:
+            - 'dynamodb:DescribeTable'
+            - 'dynamodb:DescribeGlobalTable'
+            - 'dynamodb:CreateTable'
+            - 'dynamodb:CreateGlobalTable'
+            - 'dynamodb:UpdateTable'
+            - 'dynamodb:UpdateGlobalTable'
+            - 'dynamodb:DeleteTable'
+            - 'dynamodb:ListTagsOfResource'
+            - 'dynamodb:TagResource'
+         Resource:
+            - '*'
+      # Permissions needed for SimpleEmailServiceDomainVerification:
+      -
+         Effect: 'Allow'
+         Action:
+            - 'ses:VerifyDomainIdentity'
+            - 'ses:DeleteIdentity'
+         Resource:
+            - '*'
+      # Permissions needed for SimpleEmailServiceRuleSetActivation:
+      -
+         Effect: 'Allow'
+         Action:
+            - 'ses:SetActiveReceiptRuleSet'
+         Resource:
+            - '*'
+      # Permissions needed for APIGatewayDomainName:
+      -
+         Effect: 'Allow'
+         Action:
+            - 'apigateway:*'
+         Resource:
+            - '*'
+      # Permissions needed for ELBTargetGroup:
+      -
+         Effect: 'Allow'
+         Action:
+            - 'elasticloadbalancing:CreateTargetGroup'
+            - 'elasticloadbalancing:DeleteTargetGroup'
+            - 'elasticloadbalancing:ModifyTargetGroup'
+            - 'elasticloadbalancing:ModifyTargetGroupAttributes'
+         Resource:
+            - '*'
+      # Permissions needed for ELBTargetGroupLambdaTarget:
+      -
+         Effect: 'Allow'
+         Action:
+            - 'elasticloadbalancing:RegisterTargets'
+            - 'elasticloadbalancing:DeregisterTargets'
+         Resource:
+            - '*'
+
+functions:
+   customResources:
+      name: ${self:custom.objectPrefix}
+      handler: node_modules/@silvermine/cloudformation-custom-resources/src/CustomResourceHandler.handler
+      memorySize: 256
+      timeout: 300
+
+resources:
+   Outputs:
+      CustomResourcesServiceToken:
+         Description: The ARN of the custom resources Lambda function to use as a service token when using a custom resource.
+         Value: { 'Fn::GetAtt': [ 'CustomResourcesLambdaFunction', 'Arn' ] }
+         Export:
+            Name: '${self:custom.objectPrefix}-ServiceToken'
