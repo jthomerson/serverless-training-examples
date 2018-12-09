@@ -1,0 +1,53 @@
+service: usage-custom-resources
+
+# Note: I write these examples using the latest version of Serverless. I pin the example
+# to that version so that I know it will work for you even if you find it a year later.
+# Likely, you can remove this line and use the example with any recent version of
+# Serverless. Give it a shot if you're using a different version.
+frameworkVersion: "=1.34.1"
+
+custom:
+   defaultRegion: us-east-1
+   region: ${opt:region, self:custom.defaultRegion}
+   stage: ${opt:stage, env:USER}
+   objectPrefix: '${self:service}-${self:custom.stage}'
+   # NOTE: this caller reference value must be unique across the account, meaning it can
+   # not be used in another stack. Thus, we put a default value here, but also allow it to
+   # be overridden when the project is packaged or deployed (e.g. `sls deploy
+   # --callerReference 1234`) so that multiple stacks could be deployed simultaneously. As
+   # a user, you could also externalize this value and/or define a value per-stage.
+   defaultAccessIdentityCallerReference: 9999
+   accessIdentityCallerReference: ${opt:callerReference, self:custom.defaultAccessIdentityCallerReference}
+
+provider:
+   name: aws
+   runtime: nodejs8.10
+
+resources:
+   Outputs:
+      CloudFrontOriginAccessIdentityID:
+         Description: The ID of our CloudFront Origin Access Identity - to be used by CloudFront and S3 for securing S3 website buckets.
+         Value: { 'Ref': 'CloudFrontOriginAccessIdentity' }
+         Export:
+            Name: '${self:custom.objectPrefix}-CloudFrontOriginAccessIdentity-ID'
+      CloudFrontOriginAccessIdentityS3CanonicalUserID:
+         Description: The S3 canonical user ID of our CloudFront Origin Access Identity - to be used by CloudFront and S3 for securing S3 website buckets.
+         Value: { 'Fn::GetAtt': [ 'CloudFrontOriginAccessIdentity', 'S3CanonicalUserId' ] }
+         Export:
+            Name: '${self:custom.objectPrefix}-CloudFrontOriginAccessIdentity-S3CanonicalUserID'
+   Resources:
+      CloudFrontOriginAccessIdentity:
+         Type: 'Custom::CloudFrontOriginAccessIdentity'
+         Properties:
+            # The key to using custom resources is providing a "ServiceToken", which is
+            # really an ARN that points to a Lambda function that should get invoked any
+            # time CloudFormation needs to create, update, or delete your custom resource.
+            # The properties you define here will get passed to the Lambda function so it
+            # can take the appropriate action to create, update, or delete the resource.
+            # In this case the service token points to the Lambda function that's deployed
+            # as part of the `custom-resources` service (see `../custom-resources/`).
+            # We're using `Fn::ImportValue` to pull in the ARN that is exported by the
+            # CloudFormation stack for `custom-resources`.
+            ServiceToken: { 'Fn::ImportValue': 'cloudformation-custom-resources-${self:custom.stage}-ServiceToken' }
+            CallerReference: ${self:custom.accessIdentityCallerReference}
+            Comment: '${self:custom.objectPrefix}'
