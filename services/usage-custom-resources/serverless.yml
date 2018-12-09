@@ -22,6 +22,10 @@ custom:
 provider:
    name: aws
    runtime: nodejs8.10
+   stackTags: # NOTE: STAGE is automatically added by SLS
+      SLS_SVC_NAME: ${self:service}
+   region: ${self:custom.region}
+   stage: ${self:custom.stage}
 
 resources:
    Outputs:

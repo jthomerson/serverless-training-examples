@@ -13,6 +13,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@silvermine/cloudformation-custom-resources": "1.0.0-alpha.1"
+    "@silvermine/cloudformation-custom-resources": "1.0.0-alpha.1",
+    "aws-sdk": "2.373.0"
   }
 }

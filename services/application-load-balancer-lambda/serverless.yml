@@ -1,0 +1,222 @@
+service: alb-lambda
+
+# Note: I write these examples using the latest version of Serverless. I pin the example
+# to that version so that I know it will work for you even if you find it a year later.
+# Likely, you can remove this line and use the example with any recent version of
+# Serverless. Give it a shot if you're using a different version.
+frameworkVersion: "=1.34.1"
+
+custom:
+   defaultRegion: us-east-1
+   region: ${opt:region, self:custom.defaultRegion}
+   stage: ${opt:stage, env:USER}
+   objectPrefix: '${self:service}-${self:custom.stage}'
+   withRegionObjectPrefix: '${self:service}-${self:custom.region}-${self:custom.stage}'
+
+provider:
+   name: aws
+   runtime: nodejs8.10
+   stackTags: # NOTE: STAGE is automatically added by SLS
+      SLS_SVC_NAME: ${self:service}
+   region: ${self:custom.region}
+   stage: ${self:custom.stage}
+
+resources:
+   Outputs:
+      LoadBalancerDNSName:
+         Value: { 'Fn::GetAtt': [ LoadBalancer, 'DNSName' ] }
+         Export: { Name: '${self:custom.objectPrefix}-LoadBalancerDNSName' }
+   Resources:
+      # These resources are pre-requisites for creating the Application Load Balancer:
+      # First, a VPC that has a small subnet in two availability zones. Since we're not
+      # actually deploying any resources into the VPC, the setup is very simple.
+      VPC:
+         Type: 'AWS::EC2::VPC'
+         Properties:
+            CidrBlock: 172.31.0.0/16
+            EnableDnsHostnames: true
+      InternetGateway:
+         Type: 'AWS::EC2::InternetGateway'
+      VPCGatewayAttachment:
+         Type: 'AWS::EC2::VPCGatewayAttachment'
+         Properties:
+            VpcId: { Ref: VPC }
+            InternetGatewayId: { Ref: InternetGateway }
+      RouteTable:
+         Type: 'AWS::EC2::RouteTable'
+         Properties:
+            VpcId: { Ref: VPC }
+      InternetRoute:
+         Type: 'AWS::EC2::Route'
+         DependsOn: VPCGatewayAttachment
+         Properties:
+            DestinationCidrBlock: 0.0.0.0/0
+            GatewayId: { Ref: InternetGateway }
+            RouteTableId: { Ref: RouteTable }
+      SubnetA:
+         Type: 'AWS::EC2::Subnet'
+         Properties:
+            AvailabilityZone: '${self:custom.region}a'
+            CidrBlock: 172.31.0.0/20
+            MapPublicIpOnLaunch: false
+            VpcId: { Ref: VPC }
+      SubnetB:
+         Type: 'AWS::EC2::Subnet'
+         Properties:
+            AvailabilityZone: '${self:custom.region}b'
+            CidrBlock: 172.31.16.0/20
+            MapPublicIpOnLaunch: false
+            VpcId: { Ref: VPC }
+      SubnetARouteTableAssociation:
+         Type: 'AWS::EC2::SubnetRouteTableAssociation'
+         Properties:
+            SubnetId: { Ref: SubnetA }
+            RouteTableId: { Ref: RouteTable }
+      SubnetBRouteTableAssociation:
+         Type: 'AWS::EC2::SubnetRouteTableAssociation'
+         Properties:
+            SubnetId: { Ref: SubnetB }
+            RouteTableId: { Ref: RouteTable }
+      SecurityGroup:
+         Type: 'AWS::EC2::SecurityGroup'
+         Properties:
+            GroupName: 'http-https'
+            GroupDescription: 'HTTPS/HTTPS inbound; Nothing outbound'
+            VpcId: { Ref: VPC }
+            SecurityGroupIngress:
+               -
+                  IpProtocol: tcp
+                  FromPort: '80'
+                  ToPort: '80'
+                  CidrIp: 0.0.0.0/0
+               -
+                  IpProtocol: tcp
+                  FromPort: '443'
+                  ToPort: '443'
+                  CidrIp: 0.0.0.0/0
+            SecurityGroupEgress:
+               -
+                  # We don't need any egress traffic, but if we don't specify a rule, AWS
+                  # will add the default "allow all" rule, so here we allow "egress" only
+                  # to localhost. The ELB does not seem to require an egress rule for it
+                  # to be able to connect to AWS resources like Lambda.
+                  IpProtocol: -1
+                  FromPort: '1'
+                  ToPort: '1'
+                  CidrIp: 127.0.0.1/32
+      # And now we create a bucket for the ALB logs to go into:
+      AWSServiceLoggingBucket:
+         Type: 'AWS::S3::Bucket'
+         Properties:
+            BucketName: '${self:custom.withRegionObjectPrefix}-logs'
+            AccessControl: 'LogDeliveryWrite'
+            LifecycleConfiguration:
+               Rules:
+                  - { Status: 'Enabled', ExpirationInDays: 45 }
+      # And give access for the ALB to write to it:
+      AWSServiceLoggingBucketPolicy:
+         Type: 'AWS::S3::BucketPolicy'
+         Properties:
+            Bucket: { Ref: AWSServiceLoggingBucket }
+            PolicyDocument:
+               Statement:
+                  -
+                     Effect: 'Allow'
+                     Action: 's3:PutObject'
+                     Resource: { 'Fn::Join': [ '', [ 'arn:aws:s3:::', { Ref: AWSServiceLoggingBucket }, '/alb/*' ] ] }
+                     Principal:
+                        AWS:
+                           # Note that these are account IDs for AWS-owned accounts used
+                           # by Elastic Load Balancer. I've included all of the ones
+                           # currently listed in their documentation (except Gov and
+                           # China) so that you can deploy this service to any region you
+                           # want. However, I'd recommend only listing the one(s) you need
+                           # for the region(s) you use.
+                           # See https://docs.aws.amazon.com/elasticloadbalancing/latest/classic/enable-access-logs.html
+                           - 127311923021
+                           - 033677994240
+                           - 027434742980
+                           - 797873946194
+                           - 985666609251
+                           - 054676820928
+                           - 156460612806
+                           - 652711504416
+                           - 009996457667
+                           - 582318560864
+                           - 600734575887
+                           - 383597477331
+                           - 114774131450
+                           - 783225319266
+                           - 718504428378
+                           - 507241528517
+      # Now we get to creating the actual Application Load Balancer and the associated
+      # pieces.
+      LoadBalancer:
+         Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+         Properties:
+            Type: 'application'
+            Name: '${self:custom.objectPrefix}'
+            IpAddressType: 'ipv4'
+            Scheme: 'internet-facing'
+            LoadBalancerAttributes:
+               - { Key: 'deletion_protection.enabled', Value: false }
+               # TODO: add a note here about HTTP/2
+               - { Key: 'routing.http2.enabled', Value: false }
+               - { Key: 'access_logs.s3.enabled', Value: true }
+               - { Key: 'access_logs.s3.bucket', Value: { Ref: AWSServiceLoggingBucket } }
+               - { Key: 'access_logs.s3.prefix', Value: 'alb/${self:custom.objectPrefix}' }
+            SecurityGroups:
+               - { Ref: SecurityGroup }
+            Subnets:
+               - { Ref: SubnetA }
+               - { Ref: SubnetB }
+      # Each target group can have one Lambda function associated with it. Rules determine
+      # which target group (and thus which function) is used for each request (based on
+      # request domain and path) sent to the ALB.
+      TargetGroup:
+         Type: 'Custom::ELBTargetGroup'
+         Properties:
+            ServiceToken: { 'Fn::ImportValue': 'cloudformation-custom-resources-${self:custom.stage}-ServiceToken' }
+            Name: '${self:service}-${self:custom.stage}-tg1'
+            TargetGroupAttributes: [ { Key: 'lambda.multi_value_headers.enabled', Value: true } ]
+      # You have to grant permission to Elastic Load Balancing to invoke your Lambda
+      # function.
+      InvokePermission:
+         Type: 'AWS::Lambda::Permission'
+         Properties:
+            Action: 'lambda:InvokeFunction'
+            FunctionName: { 'Fn::ImportValue': 'echo-api-${self:custom.stage}-EchoLambdaFunction' }
+            Principal: 'elasticloadbalancing.amazonaws.com'
+            SourceArn: { Ref: TargetGroup }
+      # And finally you associate the Lambda function "target" with the target group, and
+      # thus, the Application Load Balancer
+      Target:
+         Type: 'Custom::ELBTargetGroupLambdaTarget'
+         # This is important because if you try to associate the function as a target
+         # _before_ the permission exists on the function, an error will be thrown.
+         DependsOn: InvokePermission
+         Properties:
+            ServiceToken: { 'Fn::ImportValue': 'cloudformation-custom-resources-${self:custom.stage}-ServiceToken' }
+            TargetGroupArn: { Ref: TargetGroup }
+            TargetFunctionArn: { 'Fn::ImportValue': 'echo-api-${self:custom.stage}-EchoLambdaFunction' }
+      HTTPListener:
+         Type: 'AWS::ElasticLoadBalancingV2::Listener'
+         Properties:
+            LoadBalancerArn: { Ref: LoadBalancer }
+            Port: 80
+            Protocol: 'HTTP'
+            DefaultActions:
+               -
+                  Type: 'fixed-response'
+                  Order: 1
+                  FixedResponseConfig:
+                     StatusCode: 404
+                     ContentType: 'application/json'
+                     MessageBody: '${file(./static-error-responses/not-found.txt)}'
+      ListenerRule:
+         Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+         Properties:
+            ListenerArn: { Ref: HTTPListener }
+            Priority: 1
+            Actions: [ { Type: 'forward', Order: 1, TargetGroupArn: { Ref: TargetGroup } } ]
+            Conditions: [ { Field: 'path-pattern', Values: [ '/echo/*' ] } ]

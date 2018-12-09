@@ -15,6 +15,10 @@ custom:
 provider:
    name: aws
    runtime: nodejs8.10
+   stackTags: # NOTE: STAGE is automatically added by SLS
+      SLS_SVC_NAME: ${self:service}
+   region: ${self:custom.region}
+   stage: ${self:custom.stage}
 
 functions:
    echo:
@@ -22,3 +26,13 @@ functions:
       events:
          - http: 'ANY /'
          - http: 'ANY {proxy+}'
+
+resources:
+   Outputs:
+      # We export the ARN of the `echo` Lambda function so that it can be referenced by
+      # the application-load-balancer-lambda service, which needs it in order to associate
+      # the function to the ALB target group, and to add permissions to the function so
+      # that the ALB service has the permissions it needs to invoke the function.
+      EchoLambdaFunction:
+         Value: { 'Fn::GetAtt': [ 'EchoLambdaFunction', 'Arn' ] }
+         Export: { Name: '${self:custom.objectPrefix}-EchoLambdaFunction' }

@@ -1,0 +1,7 @@
+[
+   {
+      "id": "b8815d20-534a-4466-92c5-3a2fd0cc74f7",
+      "title": "Not found",
+      "status": 404
+   }
+]
