@@ -22,7 +22,7 @@ provider:
    stage: ${self:custom.stage}
 
 functions:
-   echoTest:
+   echo:
       handler: src/handler.echo
       events:
          - http: 'ANY /'
@@ -34,6 +34,6 @@ resources:
       # the application-load-balancer-lambda service, which needs it in order to associate
       # the function to the ALB target group, and to add permissions to the function so
       # that the ALB service has the permissions it needs to invoke the function.
-      EchoTestLambdaFunction:
-         Value: { 'Fn::GetAtt': [ 'EchoTestLambdaFunction', 'Arn' ] }
-         Export: { Name: '${self:custom.objectPrefix}-EchoTestLambdaFunction' }
+      EchoLambdaFunction:
+         Value: { 'Fn::GetAtt': [ 'EchoLambdaFunction', 'Arn' ] }
+         Export: { Name: '${self:custom.objectPrefix}-EchoLambdaFunction' }
