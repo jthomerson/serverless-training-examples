@@ -1,3 +1,4 @@
+app: serverless-training
 service: alb-lambda
 
 # Note: I write these examples using the latest version of Serverless. I pin the example
@@ -7,7 +8,7 @@ service: alb-lambda
 frameworkVersion: "=1.34.1"
 
 custom:
-   defaultRegion: us-east-1
+   defaultRegion: us-west-2
    region: ${opt:region, self:custom.defaultRegion}
    stage: ${opt:stage, env:USER}
    objectPrefix: '${self:service}-${self:custom.stage}'
@@ -15,7 +16,7 @@ custom:
 
 provider:
    name: aws
-   runtime: nodejs8.10
+   runtime: nodejs10.x
    stackTags: # NOTE: STAGE is automatically added by SLS
       SLS_SVC_NAME: ${self:service}
    region: ${self:custom.region}
